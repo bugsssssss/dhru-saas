@@ -1,0 +1,74 @@
+#prod
+version: '2.3'
+services:
+  web:
+    image: nginx:latest
+    restart: unless-stopped
+    volumes:
+      - './docker/web/nginx.conf:/etc/nginx/nginx.conf'
+      - '.:/var/www/html'
+      - '/var/log/nginx:/var/log/nginx'
+    network_mode: host #need to be host to work with php-fpm that points to localhost on host
+    depends_on:
+      - app
+
+  app:
+    # no need to build on prod! build only on dev
+    image: bigexxx/panel
+    build:
+      context: ./docker/app
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    runtime: nvidia
+    volumes:
+      - '.:/var/www/html'
+      - './docker/app/supervisord.conf:/etc/supervisor/conf.d/supervisord.conf'
+    network_mode: host
+    environment:
+      NVIDIA_DRIVER_CAPABILITIES: all
+    depends_on:
+      - redis
+      - mariadb
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    volumes:
+      - 'redis:/data'
+      - './docker/redis/redis.conf:/etc/redis/redis.conf'
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      retries: 3
+      timeout: 5s
+    network_mode: host
+    command:
+      - /etc/redis/redis.conf
+
+  mariadb:
+    image: mariadb:latest
+    restart: unless-stopped
+    volumes:
+      - 'mariadb:/var/lib/mysql'
+    environment:
+      MARIADB_USER: '${DB_USERNAME}'
+      MARIADB_PASSWORD: '${DB_PASSWORD}'
+      MARIADB_ROOT_PASSWORD: '${DB_PASSWORD}'
+      MARIADB_DATABASE: '${DB_DATABASE}'
+    ports:
+      - '127.0.0.1:3306:3306'
+    networks:
+      - default
+
+  nvidia_gpu_prometheus_exporter:
+    image: mindprince/nvidia_gpu_prometheus_exporter:0.1
+    restart: unless-stopped
+    runtime: nvidia
+    environment:
+      NVIDIA_DRIVER_CAPABILITIES: all
+    network_mode: host
+
+volumes:
+  redis:
+    driver: local
+  mariadb:
+    driver: local

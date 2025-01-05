@@ -1,0 +1,131 @@
+FROM bigexxx/cuda:10.1-devel-ubuntu18.04 as builder
+#GTX 1070, 1080 only work with cuda 10.1, cuda 10.1 only work on ubuntu 18.04!!!!
+WORKDIR /usr/src
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV TZ=Asia/Tashkent
+
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime  \
+    && echo $TZ > /etc/timezone
+
+RUN apt-get update \
+    && apt-get install -y wget tclsh cmake pkg-config build-essential libssl-dev yasm libx264-dev libx265-dev autoconf bison re2c libxml2-dev libcurl4-openssl-dev libzip-dev
+
+RUN wget "https://github.com/Haivision/srt/archive/refs/tags/v1.5.3.tar.gz" -O srt.tar.gz \
+    && mkdir srt \
+    && tar -xvf srt.tar.gz -C srt --strip-components=1
+
+RUN wget "https://bitbucket.org/big_ex/astra/get/04fca1e45326.tar.gz" -O astra.tar.gz \
+    && mkdir astra \
+    && tar -xvf astra.tar.gz -C astra --strip-components=1
+
+RUN wget "https://github.com/bigexxx/FFmpeg/archive/refs/heads/release/5.1.tar.gz" -O ffmpeg.tar.gz \
+    && mkdir ffmpeg \
+    && tar -xvf ffmpeg.tar.gz -C ffmpeg --strip-components=1
+
+# check required version in ffmpeg configure script on line 6594
+RUN wget "https://github.com/FFmpeg/nv-codec-headers/archive/refs/heads/old/sdk/9.0.tar.gz" -O nv-codec-headers.tar.gz \
+    && mkdir nv-codec-headers \
+    && tar -xvf nv-codec-headers.tar.gz -C nv-codec-headers --strip-components=1
+
+WORKDIR /usr/src/srt
+RUN ./configure \
+    && make -j "$(nproc)" \
+    && make install
+
+WORKDIR /usr/src/nv-codec-headers
+RUN make \
+    && make install
+
+WORKDIR /usr/src/ffmpeg
+RUN ./configure \
+    --enable-libsrt \
+    --enable-libx264 \
+    --enable-libx265 \
+    --enable-gpl \
+    --enable-nonfree \
+    --enable-version3 \
+    --enable-cuda \
+    --enable-cuvid \
+    --enable-nvenc \
+    --enable-cuda-nvcc \
+    --enable-openssl \
+    && make -j "$(nproc)" \
+    && make install
+
+WORKDIR /usr/src/astra
+RUN ./configure.sh  \
+    --bin=/usr/local/bin/astra \
+    --arch=sandybridge \
+    && make -j "$(nproc)" \
+    && make install
+
+WORKDIR /usr/src
+RUN wget "https://github.com/php/php-src/archive/refs/heads/PHP-8.2.tar.gz" -O php-src.tar.gz \
+    && mkdir php-src \
+    && tar -xvf php-src.tar.gz -C php-src --strip-components=1 \
+    && cd php-src \
+    && ./buildconf --force \
+    && ./configure \
+        --with-config-file-path=/etc/php/8.2/cli \
+        --with-config-file-scan-dir=/etc/php/8.2/cli/conf.d \
+        --with-curl \
+        --with-zlib \
+        --with-zip \
+        --with-openssl \
+        --with-pdo-mysql \
+        --with-fpm-user=www-data \
+        --with-fpm-group=www-data \
+        --without-sqlite3 \
+        --without-pdo-sqlite \
+        --enable-fpm \
+        --enable-pcntl \
+        --enable-mbstring \
+        --disable-mbregex \
+    && make -j "$(nproc)" \
+    && make install
+
+
+FROM bigexxx/cuda:10.1-devel-ubuntu18.04
+
+ARG NODE_VERSION=16
+
+WORKDIR /var/www/html
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV TZ=Asia/Tashkent
+
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime  \
+    && echo $TZ > /etc/timezone \
+    && gpg --keyserver hkp://keyserver.ubuntu.com:80 --recv 4F4EA0AAE5267A6C 2F59B5F99B1BE0B4 23E7166788B63E1E A4B469963BF863CC \
+    && gpg --export --armor 4F4EA0AAE5267A6C 2F59B5F99B1BE0B4 23E7166788B63E1E A4B469963BF863CC | apt-key add - \
+    && echo "deb https://deb.nodesource.com/node_$NODE_VERSION.x nodistro main" > /etc/apt/sources.list.d/nodesource.list \
+    && echo "deb https://dl.yarnpkg.com/debian/ stable main" > /etc/apt/sources.list.d/yarn.list \
+    && apt-get update \
+    && apt-get install -y  \
+       gnupg gosu curl ca-certificates zip unzip git supervisor libcap2-bin libpng-dev libssl-dev htop ifstat \
+       libv4l-0 ocl-icd-libopencl1 wget nodejs yarn mysql-client libx264-dev libx265-dev libxml2 libzip4  \
+    && apt-get -y autoremove \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+
+COPY start-container /usr/local/bin/start-container
+COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
+COPY php.ini /etc/php/8.1/cli/conf.d/99-app.ini
+COPY php-fpm.conf /etc/php/8.1/fpm/php-fpm.conf
+
+# Add files from binstage
+COPY --from=builder /usr/local/bin/* /usr/local/bin/
+COPY --from=builder /usr/local/lib/* /usr/local/lib/
+COPY --from=builder /usr/local/sbin/* /usr/local/sbin/
+
+RUN php -r "readfile('https://getcomposer.org/installer');" | php -- --install-dir=/usr/bin/ --filename=composer \
+    && setcap "cap_net_bind_service=+ep" /usr/local/bin/php
+
+RUN ldconfig \
+    && chmod +x /usr/local/bin/astra \
+    && chmod +x /usr/local/bin/start-container
+
+EXPOSE 9000
+
+ENTRYPOINT ["start-container"]
