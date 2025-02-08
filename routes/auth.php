@@ -23,21 +23,6 @@ Route::middleware('guest')->group(function () {
 
     Route::get('register', [RegisteredUserController::class, 'create'])
         ->name('register');
-
-    // Route::post('register', [RegisteredUserController::class, 'store']);
-
-
-    // Route::get('forgot-password', [PasswordResetLinkController::class, 'create'])
-    //     ->name('password.request');
-
-    // Route::post('forgot-password', [PasswordResetLinkController::class, 'store'])
-    //     ->name('password.email');
-
-    // Route::get('reset-password/{token}', [NewPasswordController::class, 'create'])
-    //     ->name('password.reset');
-
-    // Route::post('reset-password', [NewPasswordController::class, 'store'])
-    //     ->name('password.store');
 });
 
 Route::middleware('auth')->group(function () {
@@ -62,3 +47,13 @@ Route::middleware('auth')->group(function () {
     Route::post('logout', [AuthenticatedSessionController::class, 'destroy'])
         ->name('logout');
 });
+
+
+// ? jwt auth 
+
+// Route::prefix('client')->group(function () {
+//     Route::post('login', [ClientAuthController::class, 'login']);
+//     Route::post('register', [ClientAuthController::class, 'register']);
+//     Route::post('logout', [ClientAuthController::class, 'logout'])->middleware('auth:client');
+//     Route::get('profile', [ClientAuthController::class, 'profile'])->middleware('auth:client');
+// });

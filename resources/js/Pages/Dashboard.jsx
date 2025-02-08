@@ -1,7 +1,6 @@
-import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
-import { Head } from '@inertiajs/react';
-import { usePage } from '@inertiajs/react';
-
+import AuthenticatedLayout from "@/Layouts/AuthenticatedLayout";
+import { Head } from "@inertiajs/react";
+import { usePage } from "@inertiajs/react";
 
 export default function Dashboard() {
     const user = usePage().props.auth.user;
@@ -10,7 +9,7 @@ export default function Dashboard() {
         <AuthenticatedLayout
             header={
                 <h2 className="text-xl font-semibold leading-tight text-gray-800">
-                    DHRU
+                    Atelier
                 </h2>
             }
         >
